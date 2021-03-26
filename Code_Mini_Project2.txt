@@ -1,0 +1,943 @@
+/* USER CODE BEGIN Header */
+/**
+  ******************************************************************************
+  * @file           : main.c
+  * @brief          : Main program body
+  ******************************************************************************
+  * @attention
+  *
+  * <h2><center>&copy; Copyright (c) 2020 STMicroelectronics.
+  * All rights reserved.</center></h2>
+  *
+  * This software component is licensed by ST under BSD 3-Clause license,
+  * the "License"; You may not use this file except in compliance with the
+  * License. You may obtain a copy of the License at:
+  *                        opensource.org/licenses/BSD-3-Clause
+  *
+  ******************************************************************************
+  */
+/* USER CODE END Header */
+/* Includes ------------------------------------------------------------------*/
+#include "main.h"
+#include "string.h"
+
+/* Private includes ----------------------------------------------------------*/
+/* USER CODE BEGIN Includes */
+
+/* USER CODE END Includes */
+
+/* Private typedef -----------------------------------------------------------*/
+/* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
+/* USER CODE END PD */
+
+/* Private macro -------------------------------------------------------------*/
+/* USER CODE BEGIN PM */
+
+/* USER CODE END PM */
+
+/* Private variables ---------------------------------------------------------*/
+#if defined ( __ICCARM__ ) /*!< IAR Compiler */
+
+#pragma location=0x30040000
+ETH_DMADescTypeDef  DMARxDscrTab[ETH_RX_DESC_CNT]; /* Ethernet Rx DMA Descriptors */
+#pragma location=0x30040060
+ETH_DMADescTypeDef  DMATxDscrTab[ETH_TX_DESC_CNT]; /* Ethernet Tx DMA Descriptors */
+#pragma location=0x30040200
+uint8_t Rx_Buff[ETH_RX_DESC_CNT][ETH_MAX_PACKET_SIZE]; /* Ethernet Receive Buffers */
+
+#elif defined ( __CC_ARM )  /* MDK ARM Compiler */
+
+__attribute__((at(0x30040000))) ETH_DMADescTypeDef  DMARxDscrTab[ETH_RX_DESC_CNT]; /* Ethernet Rx DMA Descriptors */
+__attribute__((at(0x30040060))) ETH_DMADescTypeDef  DMATxDscrTab[ETH_TX_DESC_CNT]; /* Ethernet Tx DMA Descriptors */
+__attribute__((at(0x30040200))) uint8_t Rx_Buff[ETH_RX_DESC_CNT][ETH_MAX_PACKET_SIZE]; /* Ethernet Receive Buffer */
+
+#elif defined ( __GNUC__ ) /* GNU Compiler */
+
+ETH_DMADescTypeDef DMARxDscrTab[ETH_RX_DESC_CNT] __attribute__((section(".RxDecripSection"))); /* Ethernet Rx DMA Descriptors */
+ETH_DMADescTypeDef DMATxDscrTab[ETH_TX_DESC_CNT] __attribute__((section(".TxDecripSection")));   /* Ethernet Tx DMA Descriptors */
+uint8_t Rx_Buff[ETH_RX_DESC_CNT][ETH_MAX_PACKET_SIZE] __attribute__((section(".RxArraySection"))); /* Ethernet Receive Buffers */
+
+#endif
+
+ETH_TxPacketConfig TxConfig;
+ADC_HandleTypeDef hadc1;
+DMA_HandleTypeDef hdma_adc1;
+
+ETH_HandleTypeDef heth;
+
+TIM_HandleTypeDef htim1;
+
+UART_HandleTypeDef huart3;
+
+PCD_HandleTypeDef hpcd_USB_OTG_FS;
+
+/* USER CODE BEGIN PV */
+
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
+static void MX_ETH_Init(void);
+static void MX_USART3_UART_Init(void);
+static void MX_USB_OTG_FS_PCD_Init(void);
+static void MX_ADC1_Init(void);
+static void MX_TIM1_Init(void);
+/* USER CODE BEGIN PFP */
+
+/* USER CODE END PFP */
+
+/* Private user code ---------------------------------------------------------*/
+/* USER CODE BEGIN 0 */
+#include "arm_math.h"
+#define ADC_BUF_SIZE 1024
+#define K_SIZE 513
+#define MFCC_SIZE 13
+#define LAMDA_SIZE 28
+#define FILTER_SIZE 26
+#define PI 3.1415926
+int mag_print;
+
+uint16_t ADC_buff[ADC_BUF_SIZE];
+int record_done = 0;
+int N=1024;
+
+/* USER CODE END 0 */
+
+/**
+  * @brief  The application entry point.
+  * @retval int
+  */
+int main(void)
+{
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_DMA_Init();
+  MX_ETH_Init();
+  MX_USART3_UART_Init();
+  MX_USB_OTG_FS_PCD_Init();
+  MX_ADC1_Init();
+  MX_TIM1_Init();
+  /* USER CODE BEGIN 2 */
+  if(HAL_ADCEx_Calibration_Start(&hadc1, ADC_CALIB_OFFSET,ADC_SINGLE_ENDED) != HAL_OK){
+	  Error_Handler();
+  }
+  // Start TIM1
+  if(HAL_TIM_Base_Start(&htim1) != HAL_OK){
+	  Error_Handler();
+  }
+  // FFT handler initialization
+  arm_cfft_instance_f32 fft_handler;
+  arm_cfft_init_f32(&fft_handler, ADC_BUF_SIZE);
+  /* USER CODE END 2 */
+
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+  while (1)
+  {
+    /* USER CODE END WHILE */
+
+    /* USER CODE BEGIN 3 */
+	HAL_Delay(1000);
+	// Start sampling
+	record_done = 0;
+	if(HAL_ADC_Start_DMA(&hadc1, (uint32_t *)&ADC_buff, ADC_BUF_SIZE) != HAL_OK){
+	  Error_Handler();
+	}
+
+	while(1)
+	{
+		if(record_done == 1)
+		{
+			break;
+		}
+	}
+	//record_done = 0;
+
+	float array[1024];
+	for(int i=0;i<1024;i++)
+		{
+			array[i]=ADC_buff[i];
+		}
+	//calculate the average
+	float avgsq=0;
+		 		    float sumsq=0;
+		 		    for(int i=0;i<1024;i++)
+		 		   	    {
+		 		   	  	  sumsq +=ADC_buff[i];
+
+		 		   	    }
+		 		    avgsq=sumsq/1024;
+		 		    for(int i=0;i<1024;i++)
+		 		    	   	    {
+		 		    	   	  	  array[i]=array[i]-avgsq;
+
+		 		    	   	    }
+		 		   for(int i=0;i<1024;i++)
+		 		   			 		    {
+		 		   			 		    	mag_print=array[i];
+		 		   			 		    	HAL_Delay(5);
+		 		   			 		    }
+	float* input = (float*)malloc(ADC_BUF_SIZE*sizeof(float));
+	//float input[1024];
+	for(int i=0;i<1024;i++)
+	{
+
+		float a = 0.54; float b = 0.46;
+		float w=a-b*cos(2*PI*i/(N-1));
+		input[i]=w*array[i];
+	}
+	// Convert to complex array
+	float* complex_input = (float*)malloc(ADC_BUF_SIZE*2*sizeof(float));
+	//float complex_input [2048];
+	for(int i = 0; i< ADC_BUF_SIZE; i++){
+		complex_input[2*i] = input[i];
+		complex_input[2*i + 1] = 0;
+	}
+	free(input);
+
+	// Perform FFT
+	arm_cfft_f32(&fft_handler, complex_input, 0, 1);
+
+
+	float* real = (float*)malloc(ADC_BUF_SIZE*sizeof(float));
+	float* img = (float*)malloc(ADC_BUF_SIZE*sizeof(float));
+	//float real[1024];
+	//float img[1024];
+	for( int j=0;j<1024;j++)
+	{
+		real[j]=complex_input[2*j];
+		img[j]=complex_input[2*j + 1];
+	}
+	free(complex_input);
+	float* mag = (float*)malloc(ADC_BUF_SIZE*sizeof(float));
+	//float mag[1024];
+	for(int l=0;l<1024;l++)
+	{
+		mag[l]=(real[l]*real[l]+img[l]*img[l]);
+	}
+
+
+	float K[513];
+	for(int i=0;i<513;i++)
+	{
+		K[i]=mag[i];
+	}
+	free(mag);
+
+	//float* phi = (float*)malloc(LAMDA_SIZE*sizeof(float));
+	//generate frequency delta
+	//float phi[28];
+	float lamda[28]= {16,21,27,33,40,47,55,63,73,82,93,105,118,132,147,164,181,201,222,245,269,296,325,357,391,429,469,513};
+
+int idx=0;
+	//float* lamda26 = (float*)malloc(FILTER_SIZE*sizeof(float));
+	//calculate energy and filter
+	float lamda26[26];
+	float filter_bank[513];
+	float eng[26][513];
+	float energy_1[513];
+	for(int j=1;j<=26;j++)
+	{
+		for(int i=1;i<=513;i++)
+		{
+			if(lamda[j-1]>i)
+				filter_bank[i-1]=0;
+			else if(i>=lamda[j-1] && i<=lamda[j])
+			{
+				filter_bank[i-1]=(i-lamda[j-1])/(lamda[j]-lamda[j-1]);
+			}
+			else if(i>=lamda[j] && i<=lamda[j+1])
+			{
+				filter_bank[i-1]=(lamda[j+1]-i)/(lamda[j+1]-lamda[j]);
+			}
+			else if(i>lamda[j+1])
+				filter_bank[i-1]=0;
+			eng[j-1][i-1]=K[i-1]*filter_bank[i-1];
+			//if (j==1) {energy_1[i-1]= K[i-1]*filter_bank[i-1];}
+		}
+
+	}
+	//calculate energy
+	for(int y=0;y<26;y++)
+	{
+		float sum=0;
+		for(int x=0;x<513;x++)
+		{
+			sum +=eng[y][x];
+		}
+		lamda26[y]=sum;
+	}
+	// log
+	float lamda261[26];
+	for(int a=0;a<26;a++)
+	{
+		lamda261[a]=log10(lamda26[a]);
+	}
+
+
+
+	//compute Z MFCC
+
+	float* MFCC = (float*)malloc(MFCC_SIZE*sizeof(float));
+	//float MFCC[13];
+	for(int x=1;x<=13;x++)
+	{
+		float summfcc=0;
+		for(int iii=1;iii<=26;iii++)
+				{
+
+					summfcc +=(lamda261[iii-1])*cos(x*(iii-0.5)*PI/26);
+				}
+		MFCC[x-1]=summfcc;
+	}
+	/*for(int i=0;i<26;i++)
+			{
+				printf((" %0.4f"), i, lamda261[i]);
+				HAL_Delay(5);
+
+			}*/
+			printf("\n");
+			//Input1
+			float x1_step1x_offset[13]={-3.242823,-9.124611,-6.029683,-4.767819,-6.913661,-6.210202,-4.94536,-5.535037,-5.137199,-3.593549,-5.191547,-5.089184,-3.885099};
+			float x1_step1_gain[13]={0.129599645311691,0.0936408323471393,0.1199880035994,0.142639057926078,0.18460681885899,0.200683568370584,0.190656696973773,0.207863993757429,0.252472271601591,0.319981978614964,0.234106180262695,0.259553010782481,0.279350482193851};
+			float x1_step1_ymin = -1;
+
+			//Layer 1
+			float b1[5]={-0.040151459465624927958,0.034687655852930675271,-0.39559366682209362587,0.67920742447945636755,-1.5456089651932034545};
+			float IW1_1[5][13]={1.3564631647162619377,0.64943912081085242161,1.5729499557408317401,0.7456315059561368086,0.58638071824872639581,-0.42154438689510514982,-0.78642557905141829977,0.20785206472804163003,-0.42248270566890894218,-0.20933639958658384339,-0.1470193805823651334,-1.5258570283239456522,-0.4105135555477586462,-1.9770526312900109644,-0.42385568685526825439,1.0071826380412520763,0.1236298727497541633,-0.72961671615775314237,1.0942489538756667855,0.8744250904110351108,-0.16216937443630563553,-0.2572351146396461008,0.14762267136923332145,-0.27967600489719679491,0.62903093113682240212,-0.14134918001989885128,0.18356442149775592521,-1.1166898378003995429,-0.46672241531446090335,0.72406012410234044108,-0.82319499000660634191,-1.0365693588675077841,-0.50624033126729617305,0.43080100249236896737,0.12040118242132977211,0.50235381205640206037,0.26259811442120878366,0.837587088920471734,1.6815322352121531146,-0.43037799770650375653,-0.13806205372173099843,0.70716102442980366405,1.7641109853780541084,-0.67087201881826363792,-0.6414891413335943593,0.87103330434120196379,-0.032496121172856620718,-0.1326033142934779363,-0.29572226053230127318,-0.33894254068254858758,-0.50148837773226473402,0.31988914205131629975,-0.19035979308971109902,0.18502820674952744073,0.81866900417788912581,0.025713658948626837153,-0.089627708231462127619,-0.38173883683847997794,0.090308250060821895766,-0.92669134229442107209,0.28425012758625217701,-0.53703511521801683415,0.69794814602436872075,0.22421318036696746834,-0.16729640167185957922};
+			//Layer,2
+			float b2[4]={0.87523176382376688398,-0.028473464178210977638,1.1699717889666141346,0.5607336444259801711};
+			float LW2_1[4][5]={-2.6794899965185274837,-0.70078423928521627051,0.53251210437383145191,-2.3647239169704188377,-0.15591486234712476078,1.1298858832132887553,-1.1669091747065130082,3.4109111610194799979,0.37017097700726142584,-0.3352412906654066993,0.10576871052633991799,2.9801573743067208966,-0.53888628217715450752,1.4313063130149292768,0.081064345981136473607,1.4912109221151554905,-1.5351184930864834044,-2.0178350070511563707,-0.60973514791933247636,0.36193309802501777428};
+
+
+			//float x1_step1x_offset[13]={-1.040394,-6.720204,-6.304231,-9.005242,-3.896547,-6.577808,-4.613387,-3.57355,-4.360903,-3.306481,-3.50403,-5.0042,-4.131745};
+			//float x1_step1_gain[13]={0.133940557314604,0.104764528365022,0.134685014177618,0.103297024085044,0.166494095536643,0.205914672460282,0.224914195234518,0.260085430261278,0.256018121986747,0.331054409950966,0.296681542773691,0.24941621018304,0.32031149652414};
+			//float x1_step1_ymin = -1;
+			//preprocesing data
+			float input_1[13];
+				for(int i=0;i<13;i++)
+				{
+					input_1[i]=MFCC[i]-x1_step1x_offset[i];
+					input_1[i]=input_1[i]*x1_step1_gain[i];
+					input_1[i]=input_1[i]+ x1_step1_ymin;
+				}
+			//float b1[5]={-0.49963489257573617808,0.73277536591925995779,-1.0964519793601863462,-2.846427186154592448,-0.0844458046592644479};
+
+			//float IW1_1[5][13]= {1.1158618457268334456,-1.7348894334598679023,-2.1874270089462757305,-0.71009044553822298074,0.86376044212232427899,-0.073854231718876908741,-1.119079982967207787,-0.4895976794078810701,0.32461643184167182641,0.63551023123817140803,0.74915722877587553885,0.26145049209639292798,0.12450727933585666041,-0.93942913297190000499,-1.2022951916863828803,1.4326830029362269681,1.2220074679029038212,0.1661440788043347383,-0.47016282951784782451,-1.2852154034748779488,-0.82791305931988856681,-0.64792216935611468553,-0.67129389017564566888,-0.18771793260749428112,-0.2479183302585813431,0.74110011450555801638,-1.8750762579066142521,-1.0796351081299992991,2.5810141683203107199,1.0258803023396518839,-0.046113525091515950027,-0.7601698436854121832,1.7979004663369007044,0.015511980348707281666,-0.36220902671467047895,0.6386380006175629287,-0.79118150601261516552,-0.60077918232154359224,0.80383114835104452212,0.85112235644702738391,0.18975907866698976667,-3.7270435557241152758,-1.9669451745010326782,0.11179832990955490546,-0.50733887964004842352,1.1039054758157957892,0.65774318398001851982,-0.21120349566614771142,1.0406731630905603492,1.3475731442092220291,0.79159121100820373229,0.10918993504598421829,1.5520624479116165162,2.0056400929580626702,-0.55600433302760587928,-2.2178085177502615544,-0.46472770959205533803,1.02699602399549339,0.6120051129571153492,0.5345060671479593406,-0.0029657980900448209505,-1.0510243905442753221,-0.30138509020384945947,1.2030448770088877364,-1.0654530698640465314};
+				//implement layer 1
+				float ouput_5[5];
+				for(int i=0;i<5;i++)
+				{
+					float total=0;
+					for(int j=0;j<13;j++)
+					{
+						total +=input_1[j]*IW1_1[i][j];
+					}
+					ouput_5[i]=total+b1[i];
+				}
+			//float b2[4]={0.41404621221778042939,0.4057072031949812696,0.79613984898180767402,-0.52891754074844177236};
+			//float LW2_1[4][5]= {1.6251315958425796016,-3.4751215308626806078,-2.7578881491930493652,4.7337075436179052446,1.2449913703934163411,3.1574638012974807211,0.48758489825953604813,-1.4341573436327683666,-1.5653690891647904504,-3.2740829060631826408,-2.1380838085408622185,2.2400988003014536964,7.3995394588411285142,-1.2034370123660433904,-1.1605140178878943225,-3.9348174877224333379,-1.5378302495931377436,-2.2769237893238041259,-3.8438205848151012489,4.0154263701050432189};
+			//create hidden layer
+				float output_4[4];
+				float num=0;
+				for(int i=0;i<4;i++)
+					{
+						float total1=0;
+						for(int j=0;j<5;j++)
+						{
+							total1 +=ouput_5[j]* LW2_1[i][j];
+						}
+						num=total1+b2[i];
+						//RELU function
+						if(num>0)
+							output_4[i]=num;
+						else
+							output_4[i]=0;
+					}
+				 double sum_to = 0;
+				 //float* result= (float*)malloc(4*sizeof(float));
+				 //calculate percentage of each vowel
+			 float result[4];
+				                    for (int i = 0; i < 4; i++)
+				                    {
+				                        sum_to += exp(output_4[i]);
+				                    }
+				                    for (int j = 0; j < 4; j++)
+				                    {
+				                        result[j] = exp(output_4[j]) / sum_to;
+				                    }
+
+				                   // free(output_4);
+				                    HAL_Delay(1000);
+				for(int i=0;i<4;i++)
+					{
+						printf((" %0.6f"), result[i]);
+						HAL_Delay(5);
+
+					}
+				//free(result);
+					printf("\n");
+			//training
+	/*float x1_step1x_offset[13] = {4.181207,1.574526,-2.534253,-5.177576,-4.696713,-6.379103,-3.480878,-2.84413,-4.017128,-2.799906,-2.05487,-2.910373,-2.011797};
+	float x1_step1_gain[13]={0.214174496529302,0.182351959157538,0.173318876228138,0.151801320003558,0.266247911950751,0.233264660217365,0.329482018024643,0.690324549183553,0.37461994806269,0.377245245813945,0.525039804580185,0.417946016838627,0.46413285710208};
+	float x1_step1_ymin = -1;
+	/*float x1_step1x_offset[13] = {9.806375,0.449715,-8.77516,-5.551613,-3.614922,-4.614092,-4.865316,-4.381392,-3.033287,-0.140411,-0.658058,-2.231099,-2.917011};
+	float x1_step1_gain[13] = {0.183377591515045,0.151302090662028,0.108602549097312,0.185371947422213,0.304517455549587,0.393164752150906,0.345813990804114,0.321152706988138,0.247837524658285,0.545433818969425,0.73780210229331,0.524136073062472,0.442037305738418};
+	float x1_step1_ymin = -1;
+	float input_1[13];
+	for(int i=0;i<13;i++)
+	{
+		input_1[i]=MFCC[i]-x1_step1x_offset[i];
+		input_1[i]=input_1[i]*x1_step1_gain[i];
+		input_1[i]=input_1[i]+ x1_step1_ymin;
+	}
+	free(MFCC);
+	float b1[5] = {-0.31187409200436805312,-0.13291717506523553771,0.038221626057795374254,1.0952737423223426472,0.94489586776659117984};
+	float IW1_1[5][13]= {1.3605904287053269819,-1.3222652814847413172,-0.82686721913198790723,-1.3504402731077120858,-1.4890672156851789687,0.38086892028575652924,-0.46126485765014374474,0.43788695872383215368,0.5348464626356361773,0.52903043650131154063,1.3864923049662092325,0.9212441922199094968,1.0968736130681031593,0.68586860254094261791,-1.4036465109870199797,-0.8725979734659637943,-0.66022418316021258544,-0.13133783392523137867,-0.86296750083308904067,-0.34034817634851066703,0.54852515049304528816,0.62797547848172841078,0.5134542895633025239,0.24887724715859024793,-0.29572572840302030484,-0.41672567392946568976,0.75088005147078995538,1.1873877988458745314,0.64083776604707898272,0.37458452726474483763,0.51375834737380932093,-0.21916295042248340463,-2.1970180231575908714,-0.32071049957733932523,1.3980306624464722276,0.18807296105475898584,0.071054614873297616828,0.32665182400959885678,0.030834320244357518725,1.1986751252957743574,0.97364341063172499258,-0.12048649319109758227,-0.84053218659416106817,0.075385942513496756456,-0.3091085803286556799,-0.97668835795181152548,-0.32491491082505297161,0.45380881374210002566,-0.84594122412696526325,0.3069416143869423963,1.0430202015149521166,0.61640331234390621784,0.50078171998932552444,0.20829194712611287521,-0.51253086218147336783,-0.4708276260224400489,-0.46933158113707090786,0.72141571420996508657,1.5629286129009871686,-1.0137730904713500024,-1.0667565461078201139,-0.97503560290493429541,-1.1449512127916514626,-0.39748200398307609316,0.58181904057525946072};
+	//% Layer 1
+	/*float b1[5] = {0.85953365608222354055,0.24736867060737935398,0.58618291652420229099,-0.57654671019481096295,-0.24468546301097962581};
+	float IW1_1[5][13] = {-0.53619484404325046256,0.22945328761818128971,-0.87930720357369984708,-0.3407824082330632165,0.59519991433275043491,1.6540206919664788288,1.0570592722348362003,-0.3910614191435782816,-1.0044252992338089658,0.20509098466751193857,-0.8111008877883723045,-0.73021890089078000941,-1.1977908207446432698,0.20104925366454112767,1.0100966091545424685,0.53864983457809567646,0.65496367654489640042,0.24632959688970185175,-0.42082990911290130143,0.011352627691214688468,-1.6925207540615827551,-1.3704544348288727473,0.55034063823758005984,-0.39917150282620106339,-0.23930931751964565346,-0.42708361694211605109,1.8512614532670577105,1.5512054638183219168,0.19673951866648040077,-0.74597808157188261191,0.17166092500525625963,-0.4141646647548186122,-0.43906156703999638102,-1.2691860446225449177,-0.27200132744218930014,1.2731425058957819285,1.2475245910124428406,1.0400945353869750498,-1.4866579049099428733,0.52340047639792175449,-1.4344918365959766771,-1.1177424078507764982,-0.70035343026082585993,0.37051571453362558417,0.10331971440085342684,0.52679009161530676586,-0.35134790587230929626,0.18595362360972256255,0.96704248705207718206,0.5976568806394095823,0.43765895147406219667,-0.27930086680615229255,-0.0080934224693858004829,1.1783606161627502296,1.1383783624223351438,0.93698817350787033664,0.64797036021028120434,-0.9427795439735309202,-0.69008812667406438379,-1.1889478342385704224,-0.87189356513553828432,-0.87014557771564771116,-0.33137640736116996676,-0.47092787883424297446,-0.34780279943302738754
+	};
+	float ouput_5[5];
+	for(int i=0;i<5;i++)
+	{
+		float total=0;
+		for(int j=0;j<13;j++)
+		{
+			total +=input_1[j]*IW1_1[i][j];
+		}
+		ouput_5[i]=total+b1[i];
+	}
+
+	//% Layer 2
+	float b2[4]={-0.67146293355224750954,0.19642154770740860581,0.50815345767600317295,-0.2028601400551132139};
+	//float b2[4] = {0.077567879939710426829,0.19029510749077543919,-0.45197244954874638001,-0.37367314463518602752
+
+//};
+  float LW2_1[4][5]={3.6240818856751588761,-0.049200850485945024637,-2.2920896799968946134,2.5598186215793208298,3.1919941981620891802,1.9367921599529327459,2.3647737834522351008,2.8519907875004135711,1.4208027625771508795,-4.1021297846251592034,-1.7115912793389940205,-2.2058702952134976449,-2.8814710945221984062,-4.0429348916798790725,0.89335104351250116395,-2.7529408296308228721,-3.0122942535031671518,2.9639486195654405343,3.2520646010543923232,0.036940140547074361288};
+	//float LW2_1[4][5] = {3.5298193477185195732,-1.0698336458352510903,2.2978814635202051697,1.9447323908103899548,-1.9561556375219346648,-3.5392420583183641369,-3.1521090203215589298,-3.4010810206972932335,0.17230674525871603198,-0.85520534019565752626,3.2568515577061982746,2.8211749907796019876,-3.2429150697916315771,-0.94893110736191521593,0.66298324225677884858,-2.9273069685124268879,1.744173134453093077,4.0682954094872902928,-1.0392081643149440051,1.734705160725541262
+
+//};
+	float*  output_4 = (float*)malloc(4*sizeof(float));
+	//float output_4[4];
+	float num=0;
+	for(int i=0;i<4;i++)
+		{
+			float total1=0;
+			for(int j=0;j<5;j++)
+			{
+				total1 +=ouput_5[j]* LW2_1[i][j];
+			}
+			num=total1+b2[i];
+			if(num>0)
+				output_4[i]=num;
+			else
+				output_4[i]=0;
+		}
+	 double sum_to = 0;
+	 float* result= (float*)malloc(4*sizeof(float));
+	// float result[4];
+	                    for (int i = 0; i < 4; i++)
+	                    {
+	                        sum_to += exp(output_4[i]);
+	                    }
+	                    for (int j = 0; j < 4; j++)
+	                    {
+	                        result[j] = exp(output_4[j]) / sum_to;
+	                    }
+
+	                    free(output_4);
+	                    HAL_Delay(1000);
+	for(int i=0;i<4;i++)
+		{
+			printf((" %0.6f"), result[i]);
+			HAL_Delay(5);
+
+		}
+	free(result);
+		printf("\n");*/
+
+
+
+
+
+
+
+  }
+  /* USER CODE END 3 */
+}
+
+/**
+  * @brief System Clock Configuration
+  * @retval None
+  */
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInitStruct = {0};
+
+  /** Supply configuration update enable
+  */
+  HAL_PWREx_ConfigSupply(PWR_LDO_SUPPLY);
+  /** Configure the main internal regulator output voltage
+  */
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
+
+  while(!__HAL_PWR_GET_FLAG(PWR_FLAG_VOSRDY)) {}
+  /** Macro to configure the PLL clock source
+  */
+  __HAL_RCC_PLL_PLLSOURCE_CONFIG(RCC_PLLSOURCE_HSE);
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_BYPASS;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 1;
+  RCC_OscInitStruct.PLL.PLLN = 24;
+  RCC_OscInitStruct.PLL.PLLP = 2;
+  RCC_OscInitStruct.PLL.PLLQ = 4;
+  RCC_OscInitStruct.PLL.PLLR = 2;
+  RCC_OscInitStruct.PLL.PLLRGE = RCC_PLL1VCIRANGE_3;
+  RCC_OscInitStruct.PLL.PLLVCOSEL = RCC_PLL1VCOWIDE;
+  RCC_OscInitStruct.PLL.PLLFRACN = 0;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2
+                              |RCC_CLOCKTYPE_D3PCLK1|RCC_CLOCKTYPE_D1PCLK1;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.SYSCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB3CLKDivider = RCC_APB3_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_APB1_DIV1;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_APB2_DIV1;
+  RCC_ClkInitStruct.APB4CLKDivider = RCC_APB4_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  PeriphClkInitStruct.PeriphClockSelection = RCC_PERIPHCLK_USART3|RCC_PERIPHCLK_ADC
+                              |RCC_PERIPHCLK_USB;
+  PeriphClkInitStruct.PLL2.PLL2M = 1;
+  PeriphClkInitStruct.PLL2.PLL2N = 19;
+  PeriphClkInitStruct.PLL2.PLL2P = 3;
+  PeriphClkInitStruct.PLL2.PLL2Q = 2;
+  PeriphClkInitStruct.PLL2.PLL2R = 2;
+  PeriphClkInitStruct.PLL2.PLL2RGE = RCC_PLL2VCIRANGE_3;
+  PeriphClkInitStruct.PLL2.PLL2VCOSEL = RCC_PLL2VCOMEDIUM;
+  PeriphClkInitStruct.PLL2.PLL2FRACN = 0;
+  PeriphClkInitStruct.Usart234578ClockSelection = RCC_USART234578CLKSOURCE_D2PCLK1;
+  PeriphClkInitStruct.UsbClockSelection = RCC_USBCLKSOURCE_PLL;
+  PeriphClkInitStruct.AdcClockSelection = RCC_ADCCLKSOURCE_PLL2;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Enable USB Voltage detector
+  */
+  HAL_PWREx_EnableUSBVoltageDetector();
+}
+
+/**
+  * @brief ADC1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_MultiModeTypeDef multimode = {0};
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+  /** Common config
+  */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ClockPrescaler = ADC_CLOCK_ASYNC_DIV1;
+  hadc1.Init.Resolution = ADC_RESOLUTION_16B;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.EOCSelection = ADC_EOC_SINGLE_CONV;
+  hadc1.Init.LowPowerAutoWait = DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.NbrOfConversion = 1;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_EXTERNALTRIG_T1_TRGO;
+  hadc1.Init.ExternalTrigConvEdge = ADC_EXTERNALTRIGCONVEDGE_RISING;
+  hadc1.Init.ConversionDataManagement = ADC_CONVERSIONDATA_DMA_ONESHOT;
+  hadc1.Init.Overrun = ADC_OVR_DATA_PRESERVED;
+  hadc1.Init.LeftBitShift = ADC_LEFTBITSHIFT_NONE;
+  hadc1.Init.OversamplingMode = DISABLE;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure the ADC multi-mode
+  */
+  multimode.Mode = ADC_MODE_INDEPENDENT;
+  if (HAL_ADCEx_MultiModeConfigChannel(&hadc1, &multimode) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /** Configure Regular Channel
+  */
+  sConfig.Channel = ADC_CHANNEL_15;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  sConfig.SingleDiff = ADC_SINGLE_ENDED;
+  sConfig.OffsetNumber = ADC_OFFSET_NONE;
+  sConfig.Offset = 0;
+  sConfig.OffsetSignedSaturation = DISABLE;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+
+}
+
+/**
+  * @brief ETH Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_ETH_Init(void)
+{
+
+  /* USER CODE BEGIN ETH_Init 0 */
+
+  /* USER CODE END ETH_Init 0 */
+
+  /* USER CODE BEGIN ETH_Init 1 */
+
+  /* USER CODE END ETH_Init 1 */
+  heth.Instance = ETH;
+  heth.Init.MACAddr[0] =   0x00;
+  heth.Init.MACAddr[1] =   0x80;
+  heth.Init.MACAddr[2] =   0xE1;
+  heth.Init.MACAddr[3] =   0x00;
+  heth.Init.MACAddr[4] =   0x00;
+  heth.Init.MACAddr[5] =   0x00;
+  heth.Init.MediaInterface = HAL_ETH_RMII_MODE;
+  heth.Init.TxDesc = DMATxDscrTab;
+  heth.Init.RxDesc = DMARxDscrTab;
+  heth.Init.RxBuffLen = 1524;
+
+  /* USER CODE BEGIN MACADDRESS */
+
+  /* USER CODE END MACADDRESS */
+
+  if (HAL_ETH_Init(&heth) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  memset(&TxConfig, 0 , sizeof(ETH_TxPacketConfig));
+  TxConfig.Attributes = ETH_TX_PACKETS_FEATURES_CSUM | ETH_TX_PACKETS_FEATURES_CRCPAD;
+  TxConfig.ChecksumCtrl = ETH_CHECKSUM_IPHDR_PAYLOAD_INSERT_PHDR_CALC;
+  TxConfig.CRCPadCtrl = ETH_CRC_PAD_INSERT;
+  /* USER CODE BEGIN ETH_Init 2 */
+
+  /* USER CODE END ETH_Init 2 */
+
+}
+
+/**
+  * @brief TIM1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_TIM1_Init(void)
+{
+
+  /* USER CODE BEGIN TIM1_Init 0 */
+
+  /* USER CODE END TIM1_Init 0 */
+
+  TIM_ClockConfigTypeDef sClockSourceConfig = {0};
+  TIM_MasterConfigTypeDef sMasterConfig = {0};
+
+  /* USER CODE BEGIN TIM1_Init 1 */
+
+  /* USER CODE END TIM1_Init 1 */
+  htim1.Instance = TIM1;
+  htim1.Init.Prescaler = 0;
+  htim1.Init.CounterMode = TIM_COUNTERMODE_UP;
+  htim1.Init.Period = 6000-1;
+  htim1.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+  htim1.Init.RepetitionCounter = 0;
+  htim1.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_DISABLE;
+  if (HAL_TIM_Base_Init(&htim1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sClockSourceConfig.ClockSource = TIM_CLOCKSOURCE_INTERNAL;
+  if (HAL_TIM_ConfigClockSource(&htim1, &sClockSourceConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sMasterConfig.MasterOutputTrigger = TIM_TRGO_UPDATE;
+  sMasterConfig.MasterOutputTrigger2 = TIM_TRGO2_RESET;
+  sMasterConfig.MasterSlaveMode = TIM_MASTERSLAVEMODE_DISABLE;
+  if (HAL_TIMEx_MasterConfigSynchronization(&htim1, &sMasterConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN TIM1_Init 2 */
+
+  /* USER CODE END TIM1_Init 2 */
+
+}
+
+/**
+  * @brief USART3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART3_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART3_Init 0 */
+
+  /* USER CODE END USART3_Init 0 */
+
+  /* USER CODE BEGIN USART3_Init 1 */
+
+  /* USER CODE END USART3_Init 1 */
+  huart3.Instance = USART3;
+  huart3.Init.BaudRate = 115200;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits = UART_STOPBITS_1;
+  huart3.Init.Parity = UART_PARITY_NONE;
+  huart3.Init.Mode = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  huart3.Init.OneBitSampling = UART_ONE_BIT_SAMPLE_DISABLE;
+  huart3.Init.ClockPrescaler = UART_PRESCALER_DIV1;
+  huart3.AdvancedInit.AdvFeatureInit = UART_ADVFEATURE_NO_INIT;
+  if (HAL_UART_Init(&huart3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetTxFifoThreshold(&huart3, UART_TXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_SetRxFifoThreshold(&huart3, UART_RXFIFO_THRESHOLD_1_8) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_UARTEx_DisableFifoMode(&huart3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART3_Init 2 */
+
+  /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
+  * @brief USB_OTG_FS Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USB_OTG_FS_PCD_Init(void)
+{
+
+  /* USER CODE BEGIN USB_OTG_FS_Init 0 */
+
+  /* USER CODE END USB_OTG_FS_Init 0 */
+
+  /* USER CODE BEGIN USB_OTG_FS_Init 1 */
+
+  /* USER CODE END USB_OTG_FS_Init 1 */
+  hpcd_USB_OTG_FS.Instance = USB_OTG_FS;
+  hpcd_USB_OTG_FS.Init.dev_endpoints = 9;
+  hpcd_USB_OTG_FS.Init.speed = PCD_SPEED_FULL;
+  hpcd_USB_OTG_FS.Init.dma_enable = DISABLE;
+  hpcd_USB_OTG_FS.Init.phy_itface = PCD_PHY_EMBEDDED;
+  hpcd_USB_OTG_FS.Init.Sof_enable = ENABLE;
+  hpcd_USB_OTG_FS.Init.low_power_enable = DISABLE;
+  hpcd_USB_OTG_FS.Init.lpm_enable = DISABLE;
+  hpcd_USB_OTG_FS.Init.battery_charging_enable = ENABLE;
+  hpcd_USB_OTG_FS.Init.vbus_sensing_enable = ENABLE;
+  hpcd_USB_OTG_FS.Init.use_dedicated_ep1 = DISABLE;
+  if (HAL_PCD_Init(&hpcd_USB_OTG_FS) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USB_OTG_FS_Init 2 */
+
+  /* USER CODE END USB_OTG_FS_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Stream0_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream0_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream0_IRQn);
+
+}
+
+/**
+  * @brief GPIO Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_GPIO_Init(void)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+
+  /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+  __HAL_RCC_GPIOH_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOG_CLK_ENABLE();
+  __HAL_RCC_GPIOE_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, LD1_Pin|LD3_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(USB_OTG_FS_PWR_EN_GPIO_Port, USB_OTG_FS_PWR_EN_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin : B1_Pin */
+  GPIO_InitStruct.Pin = B1_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : LD1_Pin LD3_Pin */
+  GPIO_InitStruct.Pin = LD1_Pin|LD3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : USB_OTG_FS_PWR_EN_Pin */
+  GPIO_InitStruct.Pin = USB_OTG_FS_PWR_EN_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(USB_OTG_FS_PWR_EN_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : USB_OTG_FS_OVCR_Pin */
+  GPIO_InitStruct.Pin = USB_OTG_FS_OVCR_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(USB_OTG_FS_OVCR_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : LD2_Pin */
+  GPIO_InitStruct.Pin = LD2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(LD2_GPIO_Port, &GPIO_InitStruct);
+
+}
+
+/* USER CODE BEGIN 4 */
+void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc){
+	if(HAL_ADC_Stop_DMA(&hadc1) != HAL_OK){
+		Error_Handler();
+	}
+	record_done = 1;
+}
+
+int _write(int file, char *ptr, int len)
+{
+  /* Implement your write code here, this is used by puts and printf for example */
+  int i=0;
+  for(i=0 ; i<len ; i++)
+    ITM_SendChar((*ptr++));
+  return len;
+}
+/* USER CODE END 4 */
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
+void Error_Handler(void)
+{
+  /* USER CODE BEGIN Error_Handler_Debug */
+  /* User can add his own implementation to report the HAL error return state */
+  HAL_GPIO_WritePin(GPIOB, LD3_Pin, GPIO_PIN_SET);
+  /* USER CODE END Error_Handler_Debug */
+}
+
+#ifdef  USE_FULL_ASSERT
+/**
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
+void assert_failed(uint8_t *file, uint32_t line)
+{
+  /* USER CODE BEGIN 6 */
+  /* User can add his own implementation to report the file name and line number,
+     tex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* USER CODE END 6 */
+}
+#endif /* USE_FULL_ASSERT */
+
+/************************ (C) COPYRIGHT STMicroelectronics *****END OF FILE****/
